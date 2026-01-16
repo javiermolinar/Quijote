@@ -5,6 +5,10 @@ Lector en terminal para "Don Quijote de la Mancha", con interfaz interactiva, bu
 Fuente del HTML:
 https://www.gutenberg.org/files/2000/2000-h/2000-h.htm
 
+
+
+![Don Quijote](Don-Quijote-de-la-Mancha.jpg)
+
 ![Captura de pantalla](screenshot.png)
 
 ## Requisitos

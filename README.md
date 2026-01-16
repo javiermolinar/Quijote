@@ -16,6 +16,22 @@ https://www.gutenberg.org/files/2000/2000-h/2000-h.htm
 go run .
 ```
 
+## Instalacion (binarios)
+
+1) Descarga el binario desde Releases:
+   https://github.com/javiermolinar/Quijote/releases
+2) Dale permisos de ejecucion (macOS/Linux):
+
+```bash
+chmod +x quijote-<tu-sistema>
+```
+
+3) Ejecuta:
+
+```bash
+./quijote-<tu-sistema>
+```
+
 ## Comandos
 
 ```bash

@@ -1,4 +1,4 @@
-# Quijote CLI
+# Quijote
 
 Lector en terminal para "Don Quijote de la Mancha", con interfaz interactiva, busqueda de capitulos y lectura paginada.
 

@@ -22,6 +22,12 @@ https://www.gutenberg.org/files/2000/2000-h/2000-h.htm
 go run .
 ```
 
+## Compilacion local
+
+```bash
+CGO_ENABLED=0 go build -ldflags="-s -w" -o quijote .
+```
+
 ## Instalacion (binarios)
 
 1) Descarga el binario desde Releases:

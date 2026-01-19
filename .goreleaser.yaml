@@ -8,6 +8,10 @@ builds:
   - id: quijote
     main: .
     binary: quijote
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -buildid=
     env:
       - CGO_ENABLED=0
     goos:

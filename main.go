@@ -1,28 +1,45 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
-	"html"
 	"io"
 	"os"
-	"regexp"
 	"strings"
+	"sync"
+
+	_ "embed"
 
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/klauspost/compress/zstd"
 )
 
 const (
-	bookFile       = "quijote.html"
-	stateFile      = ".quijote_state.json"
-	pageLineCount  = 25
-	pageLineWidth  = 80
-	pageSeparator  = "\n---\n"
-	paragraphBreak = "\n\n"
+	stateFile        = ".quijote_state.json"
+	pageLineCount    = 25
+	pageLineWidth    = 80
+	pageSeparator    = "\n---\n"
+	paragraphBreak   = "\n\n"
+	chapterSeparator = "\n<<<CHAPTER>>>\n"
+)
+
+// Regenerate with:
+//
+//	go run -tags=tools ./tools/strip_html -in quijote.html -out quijote.txt
+//	zstd -q -19 -f quijote.txt -o quijote.txt.zst
+//
+//go:embed quijote.txt.zst
+var bookCompressed []byte
+
+var (
+	bookData     []byte
+	bookDataErr  error
+	bookDataOnce sync.Once
 )
 
 type Chapter struct {
@@ -103,7 +120,7 @@ func printUsage() {
 }
 
 func runUI() {
-	chapters, err := loadChapters(bookFile)
+	chapters, err := loadChapters()
 	if err != nil {
 		exitErr(err)
 	}
@@ -149,7 +166,7 @@ func runUI() {
 }
 
 func runList() {
-	book, err := loadBook(bookFile)
+	book, err := loadBook()
 	if err != nil {
 		exitErr(err)
 	}
@@ -160,7 +177,7 @@ func runList() {
 }
 
 func runStatus() {
-	book, err := loadBook(bookFile)
+	book, err := loadBook()
 	if err != nil {
 		exitErr(err)
 	}
@@ -189,7 +206,7 @@ func runRead(args []string) {
 		exitErr(errors.New("paginas debe ser al menos 1"))
 	}
 
-	book, err := loadBook(bookFile)
+	book, err := loadBook()
 	if err != nil {
 		exitErr(err)
 	}
@@ -223,7 +240,7 @@ func runGoto(args []string) {
 		exitErr(errors.New("uso: quijote goto <numero-capitulo>"))
 	}
 
-	book, err := loadBook(bookFile)
+	book, err := loadBook()
 	if err != nil {
 		exitErr(err)
 	}
@@ -389,8 +406,8 @@ func saveStateCmd(state State) tea.Cmd {
 	}
 }
 
-func loadBook(path string) (Book, error) {
-	chapters, err := loadChapters(path)
+func loadBook() (Book, error) {
+	chapters, err := loadChapters()
 	if err != nil {
 		return Book{}, err
 	}
@@ -399,35 +416,53 @@ func loadBook(path string) (Book, error) {
 	return Book{Chapters: chapters, Pages: pages}, nil
 }
 
-func loadChapters(path string) ([]Chapter, error) {
-	data, err := os.ReadFile(path)
+func loadChapters() ([]Chapter, error) {
+	data, err := embeddedBookData()
 	if err != nil {
 		return nil, err
 	}
 
-	re := regexp.MustCompile(`(?s)<h3><a name="([^"]+)"></a>(.*?)</h3>`)
-	matches := re.FindAllSubmatchIndex(data, -1)
-	if len(matches) == 0 {
-		return nil, errors.New("no se encontraron capitulos en el HTML")
+	chunks := strings.Split(string(data), chapterSeparator)
+	chapters := make([]Chapter, 0, len(chunks))
+	for _, chunk := range chunks {
+		chunk = strings.TrimSpace(chunk)
+		if chunk == "" {
+			continue
+		}
+		title, body, ok := strings.Cut(chunk, "\n")
+		if !ok {
+			return nil, errors.New("capitulo sin cuerpo")
+		}
+		title = strings.TrimSpace(title)
+		text := strings.TrimSpace(body)
+		if title == "" || text == "" {
+			return nil, errors.New("capitulo incompleto")
+		}
+		chapters = append(chapters, Chapter{Title: title, Text: text})
 	}
 
-	chapters := make([]Chapter, 0, len(matches))
-	for i, m := range matches {
-		anchor := string(data[m[2]:m[3]])
-		title := cleanInlineText(string(data[m[4]:m[5]]))
-
-		start := m[1]
-		end := len(data)
-		if i+1 < len(matches) {
-			end = matches[i+1][0]
-		}
-
-		chunk := string(data[start:end])
-		text := cleanHTMLToText(chunk)
-		chapters = append(chapters, Chapter{Title: title, Anchor: anchor, Text: text})
+	if len(chapters) == 0 {
+		return nil, errors.New("no se encontraron capitulos")
 	}
 
 	return chapters, nil
+}
+
+func embeddedBookData() ([]byte, error) {
+	bookDataOnce.Do(func() {
+		if len(bookCompressed) == 0 {
+			bookDataErr = errors.New("libro embebido vacio")
+			return
+		}
+		reader, err := zstd.NewReader(bytes.NewReader(bookCompressed))
+		if err != nil {
+			bookDataErr = err
+			return
+		}
+		defer reader.Close()
+		bookData, bookDataErr = io.ReadAll(reader)
+	})
+	return bookData, bookDataErr
 }
 
 func buildBookPages(chapters []Chapter) ([]string, []Chapter) {
@@ -464,73 +499,6 @@ func chapterIndexForPage(chapters []Chapter, page int) int {
 		idx = i
 	}
 	return idx
-}
-
-func cleanInlineText(input string) string {
-	text := stripTags(input)
-	text = html.UnescapeString(text)
-	return strings.TrimSpace(text)
-}
-
-func cleanHTMLToText(input string) string {
-	normalized := strings.ReplaceAll(input, "\r\n", "\n")
-	normalized = strings.ReplaceAll(normalized, "\r", "\n")
-
-	// Preserve paragraph and line breaks before stripping tags.
-	normalized = replaceAllTag(normalized, "br", "\n")
-	normalized = replaceAllTag(normalized, "/p", paragraphBreak)
-	normalized = replaceAllTag(normalized, "p", "")
-	normalized = replaceAllTag(normalized, "hr", "\n")
-
-	text := stripTags(normalized)
-	text = html.UnescapeString(text)
-	text = normalizeWhitespace(text)
-	return text
-}
-
-func replaceAllTag(input, tag, replacement string) string {
-	re := regexp.MustCompile(`(?i)<\s*` + regexp.QuoteMeta(tag) + `\b[^>]*>`)
-	return re.ReplaceAllString(input, replacement)
-}
-
-func stripTags(input string) string {
-	var b strings.Builder
-	b.Grow(len(input))
-	inTag := false
-	for _, r := range input {
-		switch r {
-		case '<':
-			inTag = true
-		case '>':
-			inTag = false
-		default:
-			if !inTag {
-				b.WriteRune(r)
-			}
-		}
-	}
-	return b.String()
-}
-
-func normalizeWhitespace(input string) string {
-	lines := strings.Split(input, "\n")
-	for i, line := range lines {
-		lines[i] = strings.TrimSpace(compactSpaces(line))
-	}
-	output := strings.Join(lines, "\n")
-
-	// Collapse excessive blank lines to a single empty line.
-	re := regexp.MustCompile(`\n{3,}`)
-	output = re.ReplaceAllString(output, paragraphBreak)
-	return strings.TrimSpace(output)
-}
-
-func compactSpaces(input string) string {
-	fields := strings.Fields(input)
-	if len(fields) == 0 {
-		return ""
-	}
-	return strings.Join(fields, " ")
 }
 
 func paginate(text string, linesPerPage, lineWidth int) []string {

@@ -1,25 +1,24 @@
 # Quijote
+![Descubriendo-el-Quijote-Urda-1](https://github.com/user-attachments/assets/1a63d6f4-b6ef-49fc-ae7c-b84b58c1b13d)
 
-Lector en terminal para "Don Quijote de la Mancha", con interfaz interactiva, busqueda de capitulos y lectura paginada.
+
+Lee "Don Quijote de la Mancha" en tu terminal, con interfaz interactiva, busqueda de capitulos y lectura paginada.
 
 Fuente del HTML:
 https://www.gutenberg.org/files/2000/2000-h/2000-h.htm
 
 
+<img width="1013" height="1158" alt="Screenshot 2026-01-16 at 19 10 21" src="https://github.com/user-attachments/assets/84cffeb1-e97e-48b7-bac1-c504ba316904" />
 
-![Don Quijote](Don-Quijote-de-la-Mancha.jpg)
 
-![Captura de pantalla](screenshot.png)
 
 ## Requisitos
-
-- Go 1.21+
 - Terminal con soporte ANSI
 
 ## Uso rapido
 
 ```bash
-go run .
+./quijote
 ```
 
 ## Compilacion local
